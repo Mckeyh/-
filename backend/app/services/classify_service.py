@@ -146,6 +146,28 @@ def load_resnet50_from_local_safetensors():
          default_logger.info(f"没有旧FC权重")
     return model
 
+# 构建微调用的优化器：
+#   unfreeze=False —— 冻结主干，只训练最后的余弦分类头（快、显存小，适合小样本增量训练）
+#   unfreeze=True  —— 额外解冻最后一个残差阶段 layer4，让高层特征也参与微调。
+#                     冻结主干时常常欠拟合（train_acc 和 val_acc 都卡在低位上不去），
+#                     解冻 layer4 能明显提升准确率；主干学习率取分类头的 1/10，
+#                     避免把 ImageNet 预训练特征冲掉（灾难性遗忘）。
+def build_finetune_optimizer(model,lr_fc=5e-4,unfreeze=False):
+     for p in model.parameters():
+          p.requires_grad_(False)
+     for p in model.fc.parameters():
+          p.requires_grad_(True)
+     if unfreeze:
+          for p in model.layer4.parameters():
+               p.requires_grad_(True)
+          default_logger.info("已解冻 layer4，主干学习率取分类头的 1/10")
+          return optim.Adam([
+               {'params':model.layer4.parameters(),'lr':lr_fc/10},
+               {'params':model.fc.parameters(),'lr':lr_fc}
+          ],weight_decay=0.01)
+     default_logger.info("只训练分类头（主干已冻结）")
+     return optim.Adam(model.fc.parameters(),lr=lr_fc,weight_decay=0.01)
+
 # 害虫识别服务（单例）：持有模型与类别名，提供加载/卸载/微调/推理
 class ClassifyService:
      _instance=None
@@ -253,7 +275,8 @@ class ClassifyService:
           model.fc=new_fc
           return model
      # 微调训练主流程：准备数据 → 构建模型 → 逐 epoch 训练与验证 → 保存最优模型
-     def fintune(self,date_dir:Path,epoch=settings.FULL_EPOCHS,stop_check=None):
+     # unfreeze=True 时额外解冻 layer4 一起微调（小分类头欠拟合时用，主干用小学习率）
+     def fintune(self,date_dir:Path,epoch=settings.FULL_EPOCHS,stop_check=None,unfreeze=False):
           default_logger.info(f"开始微调")
           try:
                train_transform=transforms.Compose([
@@ -263,15 +286,19 @@ class ClassifyService:
                transforms.RandomRotation(20),
                transforms.ToTensor(),
                transforms.Normalize(
-                    mean=[0.485,0.465,0.406],
+                    mean=[0.485,0.456,0.406],
                     std=[0.229,0.224,0.225]
                )
                ])
+               # 验证集：尺寸必须与训练/推理一致（224×224）。
+               # 注意 Resize((224,224)) 传元组才是「缩放到 224×224」；
+               # 写成 Resize(224) 只缩放短边、保持长宽比，会让一个 batch 内尺寸不一，
+               # 拼 batch 时 torch.stack 报 "stack expects each tensor to be equal size"。
                val_transform=transforms.Compose([
-               transforms.Resize(224),
+               transforms.Resize((224,224)),
                transforms.ToTensor(),
                transforms.Normalize(
-                    mean=[0.485,0.465,0.406],
+                    mean=[0.485,0.456,0.406],
                     std=[0.229,0.224,0.225]
                )
                ])
@@ -345,7 +372,7 @@ class ClassifyService:
           model=model.to(self.device)
           criterion=LabelSmoothingCrossEntropy(smoothing=0.1)
           lr_fc=5e-4
-          optimizer=optim.Adam(model.fc.parameters(),lr=lr_fc,weight_decay=0.01)
+          optimizer=build_finetune_optimizer(model,lr_fc,unfreeze)
           scheduler=optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=epoch,eta_min=1e-6)
           best_acc=0.0
           best_model_state=None
@@ -362,7 +389,7 @@ class ClassifyService:
                     outputs=model(images)
                     loss=criterion(outputs,labels)
                     loss.backward()
-                    clip_grad_norm_(model.fc.parameters(),1.0)
+                    clip_grad_norm_([p for p in model.parameters() if p.requires_grad],1.0)
                     optimizer.step()
                     running_loss+=loss.item()*images.size(0)
                     _,pred=torch.max(outputs,1)
@@ -449,7 +476,7 @@ class ClassifyService:
                     return {
                          "top1":"未知类型",
                          "top1_confidence":0.0,
-                         "top5":[]
+                         "top5":top5
                     }
                return{
                     "top1":top5[0]["class"],

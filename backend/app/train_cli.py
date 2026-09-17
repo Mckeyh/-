@@ -56,6 +56,8 @@ def main() -> int:
                         help='训练轮数（默认取 config.FULL_EPOCHS）')
     parser.add_argument('--dry-run', action='store_true',
                         help='只统计并打印数据集概况，不真正训练')
+    parser.add_argument('--unfreeze', action='store_true',
+                        help='同时解冻 layer4 微调（准确率更高，耗时更长）')
     args = parser.parse_args()
 
     data_dir = Path(args.data)
@@ -85,7 +87,7 @@ def main() -> int:
 
     print('开始微调，共 %d 个 epoch …' % args.epochs)
     svc = ClassifyService()                    # 单例：内部会先加载模型
-    ok = svc.fintune(date_dir=data_dir, epoch=args.epochs)
+    ok = svc.fintune(date_dir=data_dir, epoch=args.epochs, unfreeze=args.unfreeze)
     print('训练结果：%s' % ('成功（模型已保存）' if ok else '失败（详见日志）'))
     return 0 if ok else 1
 

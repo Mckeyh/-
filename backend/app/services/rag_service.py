@@ -3,6 +3,9 @@
 # ============================================================
 import threading
 import asyncio
+import json
+import re
+from pathlib import Path
 from langchain_chroma import Chroma
 from config.config import settings
 from utils.common_utils import default_logger
@@ -60,6 +63,8 @@ class RagService:
             self.retriever=None
             self._embedding_loaded=False
             self._embedding_model_dir=None
+            # 关键词表：用于「名称精确命中」的混合检索（害虫名 + 知识库小标题）
+            self._index_terms=set()
             self._init_chromadb()
     # 初始化 ChromaDB 持久化向量库（首次使用注入本地嵌入模型）
     def _init_chromadb(self):
@@ -106,9 +111,38 @@ class RagService:
 
          if self.retriever is None and self.embeddings is not None:
               self.retriever = self.vectorstore.as_retriever(search_kwargs={"k":max(settings.K*3,12)})
+              # 重启后（向量库里已有历史文档）也要重建关键词表，否则混合检索的关键词为空
+              try:
+                   if not self._index_terms:
+                        data=self.vectorstore.get(include=["documents"],limit=500)
+                        self._refresh_index_terms(data.get("documents") or [])
+              except Exception as e:
+                   default_logger.warning(f"关键词表初始化失败:{e}")
          default_logger.info("所有组件初始化完成")
 
          return True
+    # 收集「关键词表」：识别模型的害虫类别名 + 知识库里的【小标题】，
+    # 提问时若命中这些词就做一次精确检索并优先注入，
+    # 弥补纯向量检索对「蛴螬/蝼蛄」这类具体虫名不敏感的问题（混合检索）。
+    def _refresh_index_terms(self,texts=None):
+         terms=set(self._index_terms or set())
+         try:
+              p=Path(settings.RESNET50_FINETUNED_CLASSNAMES_PATH)
+              if p.exists():
+                   with open(p,'r',encoding='utf-8') as f:
+                        for name in json.load(f):
+                             if isinstance(name,str) and 2<=len(name)<=16:
+                                  terms.add(name)
+         except Exception as e:
+              default_logger.warning(f"类别名加载失败:{e}")
+         for text in texts or []:
+              for seg in re.findall(r"【([^】]{1,40})】",text or ""):
+                   for name in re.split(r"[、,，/]",seg):
+                        name=name.strip()
+                        if 2<=len(name)<=16:
+                             terms.add(name)
+         self._index_terms=terms
+         default_logger.info(f"关键词表更新完成,共{len(terms)}个词")
     # 文档入库：按扩展名选解析器 → 分块 → 写入向量库 → 重建检索器
     def add_document(self,file_path:str)->dict:
          if not self._ensure_components():
@@ -170,7 +204,15 @@ class RagService:
                         "trunk_count":0,
                         "message":"文档加载失败"
                     }
-              text_splitter=RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
+              # 分块策略：优先按「空行」切（本知识库每个害虫段落之间用空行分隔），
+              # 段内按行/句继续切，块控制在 350 字左右。
+              # 注意：句向量模型 bge-small-zh-v1.5 最大输入 512 token（中文约 1 字≈1 token），
+              # 块过大（如 800 字）会被截断，只剩共有的标题部分参与计算，导致各块互相区分不开、检索跑偏。
+              text_splitter=RecursiveCharacterTextSplitter(
+                   chunk_size=350,
+                   chunk_overlap=60,
+                   separators=["\n\n","\n","。","；","，"]
+              )
               chunks=text_splitter.split_documents(documents)
               if not chunks:
                    default_logger.error(f"文档分割失败:{file_path}")
@@ -183,6 +225,7 @@ class RagService:
                    chunk.metadata['source']=file_path
               self.vectorstore.add_documents(chunks)
               self.retriever=self.vectorstore.as_retriever(search_kwargs={"k":max(settings.K*3,12)})
+              self._refresh_index_terms([c.page_content for c in chunks])
               default_logger.info(f"文档{file_path}添加到向量数据库,共{len(chunks)}个段落")
               return{
                         "success":True,
@@ -212,6 +255,19 @@ class RagService:
                         "source":[]
                    }
               docs=self.retriever.get_relevant_documents(question)
+              # 混合检索：问题里出现知识库/类别表里的害虫名时，用该名称再精确检索一次并放到最前，
+              # 保证「问哪种虫就答哪种虫」，再由后面的向量结果补充通用防治原则
+              matched=[t for t in (self._index_terms or set()) if t in question]
+              if matched:
+                   boost=[]
+                   for name in matched[:3]:
+                        try:
+                             boost.extend(self.vectorstore.similarity_search(name,k=2))
+                        except Exception as e:
+                             default_logger.warning(f"关键词检索失败:{name}:{e}")
+                   if boost:
+                        default_logger.info(f"关键词命中{matched[:3]},优先注入{len(boost)}段")
+                        docs=boost+docs
               default_logger.info(f"查询到{len(docs)}个相关文档落")
               source=[]
               seen=set()
@@ -231,8 +287,9 @@ class RagService:
                         "answer":"查询到0个相关文档",
                         "source":[]
                    }
+              # 送入大模型的段落数：块变小后多给几段，保证「怎么防/用什么药/天敌」三方面都有依据
               context="\n\n".join([
-                   doc.page_content.strip() for doc in unique_docs[:settings.K]
+                   doc.page_content.strip() for doc in unique_docs[:max(settings.K,5)]
               ])
               if len(context)>2000:
                    context=context[:2000] + "..."

@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     LLM_GPU_LAYERS: int = 0
     GPU_MEMORY_THRESHOLD_GB: float =5.9
     BATCH_SIZE: int = 16
-    CONFIDENCE_THRESHOLD: float = 0.25
+    # 识别置信度阈值：32 类以上细粒度模型 softmax 很平缓（预测正确时 top-1 往往也只有 0.05~0.12），
+    # 若沿用 0.25 会让几乎所有图片都返回「未知类型」。这里取 0.05，主要由返回的 Top-5 候选表达不确定性。
+    CONFIDENCE_THRESHOLD: float = 0.05
     FULL_EPOCHS: int = 10
     TRAIN_STATUS_RUNNING:str = "running"
     TRAIN_STATUS_IDLE:str="idle"
@@ -37,7 +39,9 @@ class Settings(BaseSettings):
     TRAIN_STATUS_DONE:str="done"
 
     CHROMA_PERSIST_DIR:str=f"{DATA_DIR}/chroma_db"
-    EMBEDDING_MODEL_ID:str="sentence-transformers/all-MiniLM-L6-v2"
+    # 句向量模型：中文检索用 bge-small-zh-v1.5（原 all-MiniLM-L6-v2 是英文模型，中文检索会跑偏，
+    # 例如问「蝼蛄怎么防治」会检索到「蚜虫」段落）
+    EMBEDDING_MODEL_ID:str="BAAI/bge-small-zh-v1.5"
     EMBEDDING_MODEL_PATH:str=f"{MODELS_SAFETENSORS_DIR}/{EMBEDDING_MODEL_ID}"
 
     K:int=4
