@@ -51,11 +51,22 @@
 │   │   └── services/            # 业务层：classify_service / train_service / rag_service / llm_service
 │   ├── utils/common_utils.py    # 日志
 │   └── data/                    # 模型、向量库、数据集、上传文件（不进版本库）
+├── knowledge/                   # 知识库资料（防治技术方案 + 自编害虫防治知识库，可入库检索）
 ├── miniprogram/                 # 微信小程序前端
 └── pyproject.toml / uv.lock     # uv 依赖管理
 ```
 
-## 五、数据集准备（IP102）
+## 五、知识库资料（防治问答的"知识"来源）
+
+| 目录 | 内容 |
+|---|---|
+| `knowledge/农田害虫防治知识库.txt` | 自编的害虫防治知识库：按水稻害虫 / 地下害虫与地老虎 / 旱作与小麦害虫分类，每类都写清 **危害特征、怎么防、用什么药（有效成分）、天敌是什么** |
+| `knowledge/防治资料/*.txt` | **14 份政府公开技术文件**（全国农技推广服务中心、农业农村部、陕西省农业农村厅）：2026 年水稻/小麦/玉米重大病虫害防控技术方案、科学安全用药指导意见、地下害虫防治技术、蔬菜害虫绿色防控方案等，详见 `knowledge/防治资料/资料来源说明.md` |
+
+入库后共 **125 个检索段**；回答优先引用这些官方方案的防控指标与推荐药剂，
+并在提示词里禁止编造知识库没有的剂量与商品名。
+
+## 六、数据集准备（IP102）
 
 把害虫图片按**类别子目录**放好，子目录名就是识别结果里的类别名（建议用中文，页面直接显示中文）：
 
@@ -101,7 +112,7 @@ uv run python train_cli.py --epochs 6 --unfreeze   # 解冻 layer4 一起微调�
 ```
 或在小程序「训练」页上传样本（只适合每类几十张的小样本演示）。
 
-## 六、环境搭建
+## 七、环境搭建
 
 > 依赖已用 [uv](https://docs.astral.sh/uv/) 管理。**注意：Python 必须 3.11**（`numpy==1.24.3` 不支持 3.12+）。
 
@@ -139,7 +150,7 @@ uv run uvicorn main:app --host 0.0.0.0 --port 8000
 > ⚠️ **`llama-cpp-python` 的 CUDA 版必须先 `import torch` 再 `import llama_cpp`**（CUDA 运行库由 torch 提供），
 > 代码中 `services/llm_service.py` 已保证该顺序，请勿调整。
 
-## 七、实现要点
+## 八、实现要点
 
 1. **迁移学习方案**：ResNet50 主干冻结，替换为自定义余弦分类头（`ConsineClassifier`），微调只更新分类头；类别数变化时自动扩展分类头并保留已有类别的权重。
 2. **训练任务异步化**：训练跑在后台线程，接口立即返回；状态机 + WebSocket 广播（跨线程用 `asyncio.run_coroutine_threadsafe` 投递回主事件循环）。
