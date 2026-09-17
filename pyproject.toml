@@ -1,0 +1,44 @@
+[project]
+name = "smart-agriculture"
+version = "0.1.0"
+description = "智慧农业后端（FastAPI + LangChain RAG）"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+    "fastapi==0.104.1",
+    "uvicorn[standard]==0.24.0",
+    "python-multipart==0.0.6",
+    "pydantic==2.5.0",
+    "pydantic-settings==2.1.0",
+    "sqlalchemy==2.0.23",
+    "llama-cpp-python==0.2.90",
+    "langchain==0.2.16",
+    "langchain-community==0.2.16",
+    "langchain-core==0.2.38",
+    "langchain-huggingface==0.0.3",
+    "langchain-chroma==0.1.4",
+    "chromadb==0.4.22",
+    "sentence-transformers==2.6.0",
+    "huggingface-hub==0.23.0",
+    "pypdf==3.17.4",
+    "python-docx==1.1.0",
+    "docx2txt==0.8.0",
+    "python-dotenv==1.0.0",
+    "Pillow==10.1.0",
+    "numpy==1.24.3",
+    "py7zr==0.20.8",
+    "safetensors==0.4.1",
+    "torch==2.1.0+cu121",
+    "torchvision==0.16.0+cu121",
+    "torchaudio==2.1.0+cu121",
+]
+
+[tool.uv]
+# 限定只解析 Windows AMD64 环境，避免跨平台解析时把 Linux 专属的
+# triton / nvidia-* 依赖带进来（这些在 Windows 上无 wheel）
+required-environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
+# llama-cpp-python 在 PyPI 无 Windows wheel，官方预编译包索引（GitHub Releases）
+extra-index-url = ["https://abetlen.github.io/llama-cpp-python/whl/cpu"]
+# docx2txt 在 PyPI 只有 sdist（本环境子进程构建被沙箱拦截），
+# 已用本地预构建 wheel（wheels/docx2txt-0.8-py3-none-any.whl）绕开构建
+# CUDA 版 torch/torchvision/torchaudio 的 win wheel 也已下载到 wheels/ 本地安装
+find-links = ["D:/智慧农业/wheels"]

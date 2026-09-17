@@ -1,0 +1,8 @@
+<!--pages/knowledge/knowledge.wxml-->
+<view class="container">
+    <button bindtap="chooseFile">上传文档</button>
+    <view wx:if="{{result}}">
+       <text>信息:{{result.message}}</text>
+       <text>文件名:{{result.document}}</text>
+    </view>
+</view>

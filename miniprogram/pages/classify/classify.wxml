@@ -1,0 +1,21 @@
+<!--pages/classify/classify.wxml-->
+<view class="container">
+
+  <view class="section">
+    <button bindtap="takePhoto">拍照识别</button>
+  </view>
+
+  <view wx:if="{{image.path}}" class="preview">
+    <image src="{{image.path}}" mode="aspectFit" />
+    <button bindtap="startRecognize" loading="{{isProcessing}}" disabled="{{isProcessing}}">开始识别</button>
+    <button bindtap="retake" disabled="{{isProcessing}}">重新拍摄</button>
+  </view>
+  <view wx:else class="empty-tip">
+    <text>请先拍摄一张作物照片</text>
+  </view>
+
+ 
+  <view wx:if="{{result}}" class="result">
+    <text>识别结果：{{result.top1}}</text>
+  </view>
+</view>

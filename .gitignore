@@ -1,0 +1,56 @@
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ============ 虚拟环境 / 工具缓存 ============
+.venv/
+venv/
+.uv-cache/
+.uv-python/
+.tmp-pip/
+.tmp-git/
+
+# ============ 环境变量 / 机器相关文件 ============
+.env
+.env.*
+PATH.txt
+settings.txt
+
+# ============ IDE ============
+.vscode/
+.idea/
+
+# ============ 本地预编译 wheel（约 2.8GB，超出 GitHub 限制）============
+# 需要用 uv 离线安装时，自行按 README 说明重新下载
+wheels/
+
+# ============ 模型权重 / 大文件（GitHub 单文件上限 100MB）============
+*.gguf
+*.safetensors
+*.pth
+*.pt
+*.bin
+*.h5
+*.msgpack
+*.onnx
+*.ot
+*.rar
+*.7z
+*.zip
+*.tar.gz
+
+# ============ 数据集 / 运行期数据 ============
+backend/data/
+backend/models/
+backend/pth/
+backend/json/
+backend/data/logs/
+data/
+PlantVillage_cn/
+苹果_黑腐病/
+草莓_叶焦病/
+马铃薯_晚疫病/

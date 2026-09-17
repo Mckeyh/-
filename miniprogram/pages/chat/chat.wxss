@@ -1,0 +1,89 @@
+/* pages/chat/chat.wxss */
+.chat-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: #f7f7f7;
+}
+
+.chat-header {
+  flex: none;
+  padding: 24rpx 0;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+  background: #fff;
+  border-bottom: 1rpx solid #eee;
+}
+
+/* 关键：flex:1 + min-height:0 让 scroll-view 拿到确定高度，内部才能滚动 */
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 24rpx;
+  box-sizing: border-box;
+}
+
+.msg-row {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 28rpx;
+}
+
+.msg-row.user {
+  align-items: flex-end;
+}
+
+.msg-role {
+  font-size: 22rpx;
+  color: #999;
+  margin-bottom: 8rpx;
+}
+
+.msg-content {
+  max-width: 560rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  background: #fff;
+  color: #333;
+  font-size: 28rpx;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.msg-row.user .msg-content {
+  background: #07c160;
+  color: #fff;
+}
+
+.chat-bottom {
+  height: 24rpx;
+}
+
+.chat-input-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  background: #fff;
+  border-top: 1rpx solid #eee;
+}
+
+.chat-input-bar input {
+  flex: 1;
+  height: 72rpx;
+  padding: 0 28rpx;
+  background: #f2f2f2;
+  border-radius: 36rpx;
+  font-size: 28rpx;
+}
+
+.chat-input-bar button {
+  flex: none;
+  margin-left: 16rpx;
+  font-size: 28rpx;
+}

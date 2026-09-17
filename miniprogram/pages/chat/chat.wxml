@@ -1,0 +1,17 @@
+<!--pages/chat/chat.wxml-->
+<view class="chat-page">
+  <view class="chat-header">AI问答</view>
+
+  <scroll-view class="chat-list" scroll-y="true" scroll-with-animation="true" scroll-into-view="{{scrollIntoView}}">
+    <view wx:for="{{messages}}" wx:key="id" class="msg-row {{item.role === 'user' ? 'user' : 'ai'}}">
+      <view class="msg-role">{{item.role === 'user' ? '我' : 'AI'}} · {{item.time}}</view>
+      <view class="msg-content">{{item.content}}</view>
+    </view>
+    <view id="bottom" class="chat-bottom"></view>
+  </scroll-view>
+
+  <view class="chat-input-bar">
+    <input placeholder="请输入问题" value="{{inputText}}" bindinput="onInput" confirm-type="send" bindconfirm="sendMessage" />
+    <button size="mini" bindtap="sendMessage" disabled="{{!inputText || isStreaming}}">提问</button>
+  </view>
+</view>

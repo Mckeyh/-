@@ -1,0 +1,42 @@
+<!--pages/train/train.wxml-->
+<view class="container">
+    <view>
+      <view>
+         <button bindtap="chooseImages">选择图片</button>
+         <button bindtap="clearImages">清除全部</button>
+      </view>
+      <view wx:if="{{imageList.length > 0}}">
+        <view wx:for="{{imageList}}" wx:key="path">
+          <text>{{index+1}}.{{item.name}}</text>
+          <text bindtap="removeImage" data-index="{{index}}">删除</text>
+        </view>
+      </view>
+      <view wx:else>暂未添加任何图片</view>
+      <view>
+        <text>分类名称:</text>
+        <input placeholder="请输入分类名称" value="{{label}}" bindinput="onLabelInput"/>
+      </view>
+      <view>
+        <checkbox checked="{{clearold}}" bindchange="onClearOldChange" />
+        <text>重新训练</text>
+      </view>
+      <view>
+        <button bindtap="startFull" disabled="{{!canStart}}" loading="{{isTraining}}">开始训练</button>
+      </view>
+      <view wx:if="{{status.status != 'idle'}}">
+        <view>
+          <text>训练状态:{{status.status}}</text>
+          <button wx:if="{{isTraining || status.status == 'running'}}" type="warn" size="mini" bindtap="stopTraining">停止训练</button>
+        </view>
+        <view wx:if="{{status.status == 'done'}}">
+          <text>训练完成</text>
+        </view>
+        <view wx:if="{{status.status == 'failed'}}">
+          <text>训练失败:{{status.result?status.result.error:'未知错误'}}</text>
+        </view>
+      </view>
+      <view wx:else>
+          <text>尚未开始训练</text>
+      </view>
+    </view>
+</view>
