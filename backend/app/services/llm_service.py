@@ -1,3 +1,6 @@
+# ============================================================
+# 【模块说明】本地大模型服务：llama.cpp 加载 Qwen2.5 GGUF 模型，GPU 加速推理
+# ============================================================
 import threading
 from typing import Dict, List,Optional
 import torch
@@ -9,6 +12,7 @@ from utils.common_utils import default_logger
 
 
 
+# LLM 服务（单例）：懒加载 GGUF 模型，提供多轮对话 / 流式输出 / 单轮生成
 class LLMService:
     _instance=None
     _lock=threading.Lock()
@@ -31,6 +35,7 @@ class LLMService:
         self.model_path=settings.LLM_MODEL_PATH
         self.llm=None
         self._loaded=False
+    # 加载 GGUF 模型（n_gpu_layers=-1 表示所有层都放到 GPU）
     def _load_model(self):
         if self._loaded:
             return
@@ -50,8 +55,10 @@ class LLMService:
             default_logger.error(f"模型加载失败:{e}")
             self.llm=None
             self._loaded=False
+    # 模型是否已成功加载
     def is_ready(self)->bool:
         return self._loaded and self.llm is not None
+    # 确保模型可用：未加载则尝试加载一次，仍失败返回 False
     def _ensure_model(self)->bool:
         if not self.is_ready():
             default_logger.error("模型未加载，重新载入")
@@ -60,6 +67,7 @@ class LLMService:
             default_logger.error("模型未加载完成，请检查模型路径是否正确")
             return False
         return True
+    # 多轮对话（非流式）：一次性返回完整回答
     def chat(self,messages:List[Dict[str,str]],temperature:float=0.7,max_tokens:int=512,top_p:float=0.9)->str:
         """非流式对话：一次性返回完整回答"""
         if not self._ensure_model():
@@ -84,6 +92,7 @@ class LLMService:
                 default_logger.error(f"LLM模型调用失败:{e}")
                 return f"模型调用失败:{str(e)},请重试"
         return stream_generator()
+    # 多轮对话（流式）：逐段产出生成内容，供 SSE 推送
     def chat_stream(self,messages:List[Dict[str,str]],temperature:float=0.7,max_tokens:int=512,top_p:float=0.9):
         """流式对话：逐段产出模型生成的内容"""
         if not self._ensure_model():
@@ -110,6 +119,7 @@ class LLMService:
         except Exception as e:
              default_logger.error(f"LLM流式调用失败:{e}")
              yield f"模型调用失败:{str(e)},请重试"
+    # 单轮生成：拼装 system + user 消息后调用 chat
     def generate(self,user_prompt:str,system_prompt:Optional[str]=None,temperature:float=0.7,max_tokens:int=512)->str:
          messages=[]
          if system_prompt:

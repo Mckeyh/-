@@ -1,3 +1,6 @@
+# ============================================================
+# 【模块说明】全局配置：目录路径、模型路径、训练与推理超参、设备（CPU/GPU）自动检测
+# ============================================================
 from pathlib import Path
 from pydantic_settings import BaseSettings
 import torch
@@ -7,6 +10,7 @@ from utils.common_utils import default_logger
 
 BASE_DIR=Path(__file__).resolve().parent.parent.parent
 
+# 配置类（pydantic-settings）：字段带类型标注，可通过环境变量或 .env 覆盖默认值
 class Settings(BaseSettings):
     DATA_DIR: str = f"{BASE_DIR}/data"
     MODELS_DIR: str = f"{BASE_DIR}/data/models"
@@ -48,6 +52,7 @@ class Settings(BaseSettings):
     LLM_MODEL_PATH:str=f"{MODELS_GGUF_DIR}/{LLM_MODEL_ID}/{LLM_MODEL_FILE}"
     LLM_CONTEXT_SIZE:int=4096
     LLM_THREADS:int=4
+    # 检测 GPU：显存达到阈值才把 DEVICE 设为 cuda，并设置全局默认设备
     def _detect_and_configure_device(self):
         self.DEVICE='cpu'
         self.LLM_GPU_LAYERS=0

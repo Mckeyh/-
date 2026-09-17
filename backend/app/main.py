@@ -1,3 +1,6 @@
+# ============================================================
+# 【模块说明】FastAPI 应用入口：设置模块搜索路径、创建应用、挂载路由、注册启动/关闭事件
+# ============================================================
 import multiprocessing
 multiprocessing.freeze_support()
 import sys
@@ -21,9 +24,9 @@ from services.classify_service import ClassifyService
 from services.train_service import train_service
 from pathlib import Path
 app=FastAPI(
-    title="智慧农技助手",
+    title="农田害虫识别与防治助手",
     version="1.0.0",
-    description="智慧农技助手API接口"
+    description="害虫图像识别（IP102 微调）+ 在线训练 + 防治知识问答（RAG）"
 
 )
 app.add_middleware(
@@ -33,6 +36,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 启动钩子：把主事件循环交给训练服务，训练线程才能把进度推回 WebSocket
 @app.on_event("startup")
 async def startup_event():
     #load_resnet50_from_local_safetensors()
@@ -41,6 +45,7 @@ async def startup_event():
     default_logger.info("应用启动完成")
 
 
+# 关闭钩子：回收内存（触发一次垃圾回收，配合显存释放）
 @app.on_event("shutdown")
 async def shutdown_event():
     gc.collect()

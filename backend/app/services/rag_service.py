@@ -1,3 +1,6 @@
+# ============================================================
+# 【模块说明】RAG 服务：文档解析入库 + 向量检索 + 交给本地大模型作答
+# ============================================================
 import threading
 import asyncio
 from langchain_chroma import Chroma
@@ -10,17 +13,25 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from services.llm_service import llm_service
 
 
+# 系统提示词模板：设定「农田害虫识别与防治专家」人设与回答结构
 class PromptTemplate:
-     SAA_EXPERT: str="""
-你是一个专业的农业技术专家，拥有丰富的农作物种植，病虫害防治，土壤管理的经验，请遵循以下规则回答用户的问题：
-1.回答专业，准确，基于科学知识
-2.使用通俗易懂的语言，避免过于学术化
-3.提供具体的操作的建议和步骤
-4.如果超出你的知识范围，请如实告诉用户
-5.设计农药使用，务必提醒用户注意事项
-请以专业，耐心的态度，回答用户的问题。
+     # 系统提示词：把大模型设定为「农田害虫识别与防治专家」，并约束回答必须覆盖
+     # 「怎么防 / 用什么药 / 天敌是什么」三个维度，同时强制安全用药提示
+     PEST_EXPERT: str="""
+你是一位农田害虫识别与防治专家，熟悉水稻、玉米、小麦、蔬菜、果树等作物的常见害虫及其综合防治技术。
+回答用户问题时请遵循以下规则：
+1. 先说明该害虫的种类（常用中文名/学名）、危害特征与发生规律
+2. 按三个方面给出建议：
+   「怎么防」——农业防治、物理防治、生物防治等非化学手段优先
+   「用什么药」——给出有效成分通用名（而非商品名），说明适用虫态、用量与安全间隔期
+   「天敌是什么」——列出主要天敌昆虫或病原微生物
+3. 语言通俗易懂，给出可操作的具体步骤，避免过于学术化
+4. 涉及农药时务必提醒：严格按标签剂量使用、注意安全间隔期与个人防护、轮换用药避免抗性
+5. 知识库中没有的信息请如实说明，不要编造农药名称、剂量或天敌
+请以专业、耐心的态度回答用户的问题。
      """
 
+# RAG 服务（单例）：向量库、嵌入模型、检索器三者懒加载并全局复用
 class RagService: 
     _instance=None
     _lock=threading.Lock()
@@ -46,6 +57,7 @@ class RagService:
             self._embedding_loaded=False
             self._embedding_model_dir=None
             self._init_chromadb()
+    # 初始化 ChromaDB 持久化向量库（首次使用注入本地嵌入模型）
     def _init_chromadb(self):
         try:
             self.vectorstore=Chroma(
@@ -59,6 +71,7 @@ class RagService:
         except Exception as e:  
             default_logger.error(f"向量数据库初始化失败:{e}")
             self.vectorstore=None
+    # 加载本地句向量模型 all-MiniLM-L6-v2（把文本转向量）
     def _load_embeddings(self):
         if self._embedding_loaded:
             return
@@ -74,6 +87,7 @@ class RagService:
              default_logger.error(f"嵌入模型加载失败:{e}")
              self.embeddings=None
              self._embedding_loaded=False
+    # 确保三个组件就绪（向量库 / 嵌入模型 / 检索器），并绑定嵌入函数与检索参数
     def _ensure_components(self):
          if self.vectorstore is None:
              default_logger.info("向量数据库未初始化,开始初始化")
@@ -91,6 +105,7 @@ class RagService:
          default_logger.info("所有组件初始化完成")
 
          return True
+    # 文档入库：按扩展名选解析器 → 分块 → 写入向量库 → 重建检索器
     def add_document(self,file_path:str)->dict:
          if not self._ensure_components():
               default_logger.error("向量化模型或向量数据库未加载，无法添加文档")
@@ -177,6 +192,7 @@ class RagService:
                         "trunk_count":0,
                         "message":f"添加文档{file_path}失败"
                 }
+    # 问答主流程：检索相关片段（按内容去重）→ 拼上下文 → 调大模型 → 返回答案与来源
     def query(self,question:str)->dict:
          if not self._ensure_components():
               default_logger.error("向量化模型未加载或向量数据库未初始化，无法查询")
@@ -216,9 +232,10 @@ class RagService:
               ])
               if len(context)>2000:
                    context=context[:2000] + "..."
-              system_prompt=PromptTemplate.SAA_EXPERT
+              system_prompt=PromptTemplate.PEST_EXPERT
               user_prompt=f"""
 请根据以下知识库内容回答用户问题，如果知识库中没有相关信息，请如实告知。
+回答时请围绕「怎么防治」「用什么药」「天敌是什么」三方面展开。
 
 知识库内容：
 {context}

@@ -1,3 +1,6 @@
+# ============================================================
+# 【模块说明】训练任务管理：后台线程执行训练 + 状态机 + 进度广播
+# ============================================================
 import threading
 import asyncio
 from typing import Callable, Optional
@@ -7,6 +10,7 @@ from config.config import settings
 from services.classify_service import classify_services
 
 
+# 训练服务（单例）：管理训练线程、训练状态与广播回调
 class TrainService:
     _instance=None
     _lock=threading.Lock()
@@ -34,21 +38,26 @@ class TrainService:
         self._main_loop:Optional[asyncio.AbstractEventLoop]=None
         self._epochs=settings.FULL_EPOCHS
         self._data_dir=Path(settings.UPLOAD_DATASET_UNZIPED_DIR)
+    # 注入主事件循环（启动时由 main.py 提供），供跨线程广播使用
     def set_main_loop(self,main_loop:asyncio.AbstractEventLoop):
         self._main_loop=main_loop
+    # 注册状态广播回调（由 WebSocket 层实现）
     def set_broadcat_callback(self,callback=None):
         self._brodcast_callback=callback
+    # 广播当前状态；广播失败只记日志，不影响训练
     def _broadcast(self):
         if self._brodcast_callback:
             try:
                 self._brodcast_callback(self.get_status())
             except Exception as e:
                 default_logger.info(f"广播训练状态失败:{e}")
+    # 返回状态快照，供接口与 WebSocket 使用
     def get_status(self):
         return {
             "status":self.status,
             "result":self.result
         }
+    # 启动训练：置为 running、起后台线程后立即返回（接口不阻塞）
     def start_training(self, data_dir: Path, epochs: Optional[int] = 10):
         if self.status==settings.TRAIN_STATUS_RUNNING:
             default_logger.info("训练进行中")
@@ -68,12 +77,14 @@ class TrainService:
         self.current_task=threading.Thread(target=self._run,daemon=True)
         self.current_task.start()
         return True
+    # 请求停止：只置 stop_requested 标志，训练线程在 epoch 边界检查后退出
     def request_stop(self):
         if self.status==settings.TRAIN_STATUS_RUNNING:
             self.stop_requested=True
             default_logger.info("终止训练")
             return True
         return False
+    # 训练线程主体：调用识别服务的微调流程，结束后按结果更新状态并广播
     def _run(self):
         default_logger.info(f"开始训练模型,支持{self._epochs}个epoch")
         try:

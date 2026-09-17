@@ -1,3 +1,6 @@
+# ============================================================
+# 【模块说明】害虫识别核心服务：模型构建、迁移学习微调、推理预测
+# ============================================================
 import torch
 import torch.nn as nn
 import math
@@ -23,6 +26,7 @@ import io
 from PIL import Image
 
 
+# 标签平滑交叉熵损失：缓解过拟合，改善小样本类别表现
 class LabelSmoothingCrossEntropy(nn.Module):
      def __init__(self, smoothing:float=0.1):
           super().__init__()
@@ -43,6 +47,7 @@ class LabelSmoothingCrossEntropy(nn.Module):
 
 
 
+# 余弦分类头：特征归一化后用余弦相似度分类，类别数可动态扩展
 class ConsineClassifier(nn.Module):
     def __init__(self, in_features:int, num_classes:int, scale:float=1.0):
         super().__init__()
@@ -58,6 +63,7 @@ class ConsineClassifier(nn.Module):
         x_norm=F.normalize(x, dim=1,p=2)
         cos_sim=F.linear(x_norm, weight_norm)
         return self.scale * cos_sim
+# 权重 key 映射：把 safetensors 里的 key 转成 torchvision ResNet50 的命名
 def adapt_timm_resnet_state_dict(state_dict):
     """把 safetensors 权重 key 映射为 torchvision resnet50 的 key 格式
 
@@ -103,6 +109,7 @@ def adapt_timm_resnet_state_dict(state_dict):
             continue
     default_logger.info(f"映射完成，共 {len(new_state_dict)} 个 key")
     return new_state_dict
+# 从本地 safetensors 加载 ResNet50 预训练权重（迁移学习的起点）
 def load_resnet50_from_local_safetensors():
     model_path=Path(settings.RESNET50_MODEL_PATH)
     try:
@@ -139,6 +146,7 @@ def load_resnet50_from_local_safetensors():
          default_logger.info(f"没有旧FC权重")
     return model
 
+# 害虫识别服务（单例）：持有模型与类别名，提供加载/卸载/微调/推理
 class ClassifyService:
      _instance=None
      _lock=threading.Lock()
@@ -163,6 +171,7 @@ class ClassifyService:
                transforms.Normalize(mean=[0.485,0.456,0.406],std=[0.229,0.224,0.225])
           ])
         self._load_model()
+     # 卸载模型：删除引用并回收内存与显存
      def unload_model(self):
          if self.model is not None:
               del self.model
@@ -174,6 +183,7 @@ class ClassifyService:
          else:
               default_logger.info(f"模型未加载")
          self.model_ready=False
+     # 加载模型：优先加载微调后的 .pth（含类别表），否则退回预训练权重
      def _load_model(self): 
           self.unload_model()
           pth_path=Path(settings.RESNET50_FINETUNED_PTH_PATH)
@@ -207,6 +217,7 @@ class ClassifyService:
           except Exception as e:
                default_logger.error(f"加载失败:{e}")
                raise RuntimeError(f"无法加载:{e}")
+     # 兜底类别名：没有本地类别表时用（微调后会由 class_names.json 覆盖）
      def _get_imagenet_classes(self):
           try:
                weight=ResNet50_Weights.IMAGENET1K_V1
@@ -215,6 +226,7 @@ class ClassifyService:
                default_logger.warning(f"获取ImageNet失败:{e}")
                return [f"class_{i}" for i in range(1000)]
      #def _load_class_name_from_data(self):
+     # 分类头扩容/裁剪：类别数变化时保留已学权重，并为新类别初始化参数
      def _expand_fc_layer(self,model,old_num_classes,new_num_classes):
           fc=model.fc
           if not isinstance(fc,ConsineClassifier):
@@ -240,6 +252,7 @@ class ClassifyService:
                default_logger.info(f"fc已扩展")
           model.fc=new_fc
           return model
+     # 微调训练主流程：准备数据 → 构建模型 → 逐 epoch 训练与验证 → 保存最优模型
      def fintune(self,date_dir:Path,epoch=settings.FULL_EPOCHS,stop_check=None):
           default_logger.info(f"开始微调")
           try:
@@ -400,6 +413,7 @@ class ClassifyService:
                default_logger.error(f"保存微调后的模型失败:{e}")
                return False
 
+     # 推理：图片字节 → 预处理 → 前向计算 → top-k 类别与置信度（低于阈值判为未知）
      def predict(self,image_bytes:bytes,top_k:int=5)->dict:
           if self.model is None:
                default_logger.info(f"微调失败")

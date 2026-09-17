@@ -1,3 +1,6 @@
+# ============================================================
+# 【模块说明】知识库接口：上传防治资料（PDF/DOCX/TXT）并向量化入库
+# ============================================================
 from fastapi import APIRouter,HTTPException,File,UploadFile
 from pathlib import Path
 import re
@@ -10,6 +13,7 @@ from services.rag_service import rag_service
 
 
 router = APIRouter(prefix="/api/knowledge")
+# POST /api/knowledge/upload：校验类型与大小 → 落盘 → 解析分块 → 写入向量库
 @router.post("/upload")
 async def upload_document(file:UploadFile=File(...)):
     file_name=Path(file.filename or "upload.bin").name
