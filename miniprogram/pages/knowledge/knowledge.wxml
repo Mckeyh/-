@@ -1,8 +1,22 @@
 <!--pages/knowledge/knowledge.wxml-->
-<view class="container">
-    <button bindtap="chooseFile">上传文档</button>
-    <view wx:if="{{result}}">
-       <text>信息:{{result.message}}</text>
-       <text>文件名:{{result.document}}</text>
-    </view>
+<view class="page-wrap">
+
+  <view class="card">
+    <view class="card-title"><view class="dot"></view>知识库文档</view>
+    <view class="muted">支持 pdf / docx / doc / txt。上传后后端会解析、切分并写入本地向量库，供「智能问答」检索使用。</view>
+    <view class="muted">系统已内置 15 份官方防治资料（水稻、小麦、玉米等主要害虫防治方案），可直接提问；也可继续上传补充。</view>
+    <button class="btn-primary upload-btn" bindtap="chooseFile">📄 选择文件并上传</button>
+    <view class="tip">提示：文件从微信聊天记录中选择</view>
+  </view>
+
+  <view class="card" wx:if="{{result}}">
+    <view class="card-title"><view class="dot"></view>上传结果</view>
+    <view class="kv"><text class="k">文件名</text><text class="v">{{result.file_name || result.filename || '已选文件'}}</text></view>
+    <view class="kv" wx:if="{{result.chunks !== undefined}}"><text class="k">切分片段</text><text class="v">{{result.chunks}}</text></view>
+    <view class="kv" wx:if="{{result.message}}"><text class="k">提示</text><text class="v">{{result.message}}</text></view>
+    <view class="kv" wx:else><text class="k">状态</text><text class="v">已提交后端处理</text></view>
+  </view>
+
+  <view class="empty" wx:else>还没有上传任何文档</view>
+
 </view>

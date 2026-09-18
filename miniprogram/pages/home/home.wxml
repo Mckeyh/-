@@ -1,13 +1,26 @@
 <!--pages/home/home.wxml-->
-<view class="container">
-  <view>
-      <text>欢迎使用智慧农机助手</text>
+<view class="page-wrap">
+
+  <view class="hero">
+    <view class="hero-title">🌱 害虫防治识别</view>
+    <view class="hero-sub">害虫识别 · 在线微调训练 · 知识库智能问答</view>
   </view>
-  <view>
-      <view wx:for="{{features}}" wx:key="title" bindtap="navigateTo" data-url="{{item.url}}">
-          <text>{{item.icon}}</text>
-          <text>{{item.title}}</text>
-          <text>{{item.desc}}</text>
-      </view>
+
+  <view class="grid">
+    <view class="feature-card" wx:for="{{features}}" wx:key="title"
+          data-url="{{item.url}}" bindtap="navigateTo">
+      <view class="feature-icon">{{item.icon}}</view>
+      <view class="feature-title">{{item.title}}</view>
+      <view class="feature-desc">{{item.desc}}</view>
+    </view>
   </view>
+
+  <view class="card">
+    <view class="card-title"><view class="dot"></view>使用流程</view>
+    <view class="muted">1. 到「训练」页上传样本图片、训练分类模型</view>
+    <view class="muted">2. 到「知识」页上传农业文档，供问答检索</view>
+    <view class="muted">3. 到「分类」页拍照，识别作物病害</view>
+    <view class="muted">4. 到「智能问答」询问防治方法与用药建议</view>
+  </view>
+
 </view>

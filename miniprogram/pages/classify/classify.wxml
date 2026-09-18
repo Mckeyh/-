@@ -1,21 +1,39 @@
 <!--pages/classify/classify.wxml-->
-<view class="container">
+<view class="page-wrap">
 
-  <view class="section">
-    <button bindtap="takePhoto">拍照识别</button>
-  </view>
-
-  <view wx:if="{{image.path}}" class="preview">
-    <image src="{{image.path}}" mode="aspectFit" />
-    <button bindtap="startRecognize" loading="{{isProcessing}}" disabled="{{isProcessing}}">开始识别</button>
-    <button bindtap="retake" disabled="{{isProcessing}}">重新拍摄</button>
-  </view>
-  <view wx:else class="empty-tip">
-    <text>请先拍摄一张作物照片</text>
+  <view class="card">
+    <view class="card-title"><view class="dot"></view>害虫识别</view>
+    <view class="muted">对准害虫或受害部位拍照，尽量保证画面清晰、光线充足</view>
+    <button class="btn-primary photo-btn" bindtap="takePhoto">📷 拍照识别</button>
   </view>
 
- 
-  <view wx:if="{{result}}" class="result">
-    <text>识别结果：{{result.top1}}</text>
+  <view class="card" wx:if="{{image.path}}">
+    <view class="card-title"><view class="dot"></view>待识别图片</view>
+    <image class="preview" src="{{image.path}}" mode="aspectFit" />
+    <view class="file-info">{{image.name}}</view>
+    <view class="row-btns">
+      <button class="btn-primary flex1" bindtap="startRecognize" loading="{{isProcessing}}" disabled="{{isProcessing}}">开始识别</button>
+      <button class="btn-plain flex1" bindtap="retake" disabled="{{isProcessing}}">重新拍摄</button>
+    </view>
   </view>
+
+  <view class="card" wx:if="{{result}}">
+    <view class="card-title"><view class="dot"></view>识别结果</view>
+    <view class="top1-box">
+      <view class="tag">最可能</view>
+      <view class="top1-name">{{result.top1}}</view>
+      <view class="top1-conf">{{result.top1_confidence_text}}</view>
+    </view>
+    <view class="top5-list" wx:if="{{result.top5.length > 0}}">
+      <view class="top5-row" wx:for="{{result.top5}}" wx:key="class">
+        <view class="top5-name">{{item.class}}</view>
+        <view class="bar"><view class="bar-fill" style="width: {{item.confidence_text}}"></view></view>
+        <view class="top5-pct">{{item.confidence_text}}</view>
+      </view>
+    </view>
+    <view class="result-tip">细粒度害虫分类的置信度普遍偏低（5%~12% 属正常），建议结合 Top-5 候选综合判断；防治方法与用药建议可到「智能问答」继续询问</view>
+  </view>
+
+  <view class="empty" wx:if="{{!image.path}}">还没有拍照，点击上方按钮开始识别</view>
+
 </view>

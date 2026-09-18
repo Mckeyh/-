@@ -1,42 +1,47 @@
 <!--pages/train/train.wxml-->
-<view class="container">
-    <view>
-      <view>
-         <button bindtap="chooseImages">选择图片</button>
-         <button bindtap="clearImages">清除全部</button>
-      </view>
-      <view wx:if="{{imageList.length > 0}}">
-        <view wx:for="{{imageList}}" wx:key="path">
-          <text>{{index+1}}.{{item.name}}</text>
-          <text bindtap="removeImage" data-index="{{index}}">删除</text>
-        </view>
-      </view>
-      <view wx:else>暂未添加任何图片</view>
-      <view>
-        <text>分类名称:</text>
-        <input placeholder="请输入分类名称" value="{{label}}" bindinput="onLabelInput"/>
-      </view>
-      <view>
-        <checkbox checked="{{clearold}}" bindchange="onClearOldChange" />
-        <text>重新训练</text>
-      </view>
-      <view>
-        <button bindtap="startFull" disabled="{{!canStart}}" loading="{{isTraining}}">开始训练</button>
-      </view>
-      <view wx:if="{{status.status != 'idle'}}">
-        <view>
-          <text>训练状态:{{status.status}}</text>
-          <button wx:if="{{isTraining || status.status == 'running'}}" type="warn" size="mini" bindtap="stopTraining">停止训练</button>
-        </view>
-        <view wx:if="{{status.status == 'done'}}">
-          <text>训练完成</text>
-        </view>
-        <view wx:if="{{status.status == 'failed'}}">
-          <text>训练失败:{{status.result?status.result.error:'未知错误'}}</text>
-        </view>
-      </view>
-      <view wx:else>
-          <text>尚未开始训练</text>
+<view class="page-wrap">
+
+  <view class="card">
+    <view class="card-title"><view class="dot"></view>样本图片（最多 9 张）</view>
+    <view class="img-grid" wx:if="{{imageList.length > 0}}">
+      <view class="img-item" wx:for="{{imageList}}" wx:key="path">
+        <image class="img-thumb" src="{{item.path}}" mode="aspectFill" />
+        <view class="img-del" data-index="{{index}}" bindtap="removeImage">×</view>
       </view>
     </view>
+    <view class="empty" wx:else>暂未添加图片，请选择该病害的样本照片</view>
+    <view class="row-btns">
+      <button class="btn-ghost flex1" bindtap="chooseImages">＋ 添加图片</button>
+      <button class="btn-plain flex1" bindtap="clearImages">清空</button>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title"><view class="dot"></view>类别与训练</view>
+    <view class="form-row">
+      <text class="form-label">分类名称</text>
+      <input class="form-input" placeholder="学名或中文名，如 Chilo suppressalis" value="{{label}}" bindinput="onLabelInput" />
+    </view>
+    <view class="form-row">
+      <checkbox checked="{{clearold}}" bindchange="onClearOldChange" />
+      <text class="checkbox-text">重新训练（清空已有类别）</text>
+    </view>
+    <view class="form-hint">支持中文/字母/数字/空格/短横线/点/括号，长度 1-48 字</view>
+    <button class="btn-primary train-btn" bindtap="startFull" disabled="{{!canStart}}" loading="{{isTraining}}">开始训练</button>
+  </view>
+
+  <view class="card">
+    <view class="card-title"><view class="dot"></view>训练状态</view>
+    <view class="status-line">
+      <text wx:if="{{status.status == 'running'}}" class="status-badge running">训练中…</text>
+      <text wx:elif="{{status.status == 'done'}}" class="status-badge done">训练完成</text>
+      <text wx:elif="{{status.status == 'failed'}}" class="status-badge failed">训练失败</text>
+      <text wx:else class="status-badge idle">尚未开始</text>
+      <button wx:if="{{isTraining || status.status == 'running'}}" class="btn-stop" size="mini" bindtap="stopTraining">停止训练</button>
+    </view>
+    <view wx:if="{{status.status == 'done'}}" class="muted status-tip">模型已更新，可到「分类」页使用新模型识别。</view>
+    <view wx:if="{{status.status == 'failed'}}" class="fail-text">失败原因：{{status.result.error || '未知错误'}}</view>
+    <view wx:if="{{status.status == 'idle'}}" class="muted status-tip">上传样本、填写类别名称后即可开始训练。</view>
+  </view>
+
 </view>

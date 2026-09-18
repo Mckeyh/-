@@ -1,89 +1,80 @@
 /* pages/chat/chat.wxss */
+
 .chat-page {
-  height: 100vh;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
-  background: #f7f7f7;
+  height: 100vh;
+  background: #f5f5f5;
 }
 
 .chat-header {
-  flex: none;
-  padding: 24rpx 0;
-  text-align: center;
-  font-size: 32rpx;
+  padding: 22rpx 32rpx;
+  font-size: 26rpx;
   font-weight: 600;
-  color: #333;
-  background: #fff;
-  border-bottom: 1rpx solid #eee;
+  color: #fff;
+  background: linear-gradient(135deg, #2e7d32, #43a047);
 }
 
-/* 关键：flex:1 + min-height:0 让 scroll-view 拿到确定高度，内部才能滚动 */
 .chat-list {
   flex: 1;
-  min-height: 0;
-  width: 100%;
   padding: 24rpx;
   box-sizing: border-box;
 }
 
-.msg-row {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 28rpx;
-}
-
-.msg-row.user {
-  align-items: flex-end;
-}
-
-.msg-role {
-  font-size: 22rpx;
-  color: #999;
-  margin-bottom: 8rpx;
-}
-
+.msg-row { display: flex; flex-direction: column; margin-bottom: 24rpx; }
+.msg-role { font-size: 22rpx; color: #9ca3af; margin-bottom: 8rpx; }
 .msg-content {
-  max-width: 560rpx;
+  max-width: 82%;
   padding: 20rpx 24rpx;
-  border-radius: 16rpx;
-  background: #fff;
-  color: #333;
+  border-radius: 20rpx;
   font-size: 28rpx;
-  line-height: 1.6;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
+.msg-row.user { align-items: flex-end; }
 .msg-row.user .msg-content {
-  background: #07c160;
+  background: linear-gradient(135deg, #2e7d32, #43a047);
   color: #fff;
+  border-bottom-right-radius: 6rpx;
 }
 
-.chat-bottom {
-  height: 24rpx;
+.msg-row.ai { align-items: flex-start; }
+.msg-row.ai .msg-content {
+  background: #fff;
+  color: #1f2937;
+  border: 1rpx solid #e5eee5;
+  border-bottom-left-radius: 6rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
 }
+
+.chat-bottom { height: 20rpx; }
 
 .chat-input-bar {
-  flex: none;
   display: flex;
   align-items: center;
-  padding: 16rpx 24rpx;
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 16rpx);
   background: #fff;
-  border-top: 1rpx solid #eee;
+  border-top: 1rpx solid #e5eee5;
 }
-
 .chat-input-bar input {
   flex: 1;
-  height: 72rpx;
-  padding: 0 28rpx;
-  background: #f2f2f2;
-  border-radius: 36rpx;
+  background: #f4faf4;
+  border-radius: 999rpx;
+  padding: 16rpx 28rpx;
   font-size: 28rpx;
 }
-
 .chat-input-bar button {
-  flex: none;
   margin-left: 16rpx;
+  background: linear-gradient(135deg, #2e7d32, #43a047);
+  color: #fff;
+  border-radius: 999rpx;
   font-size: 28rpx;
+  padding: 0 36rpx;
+  line-height: 2.4;
+}
+.chat-input-bar button[disabled] {
+  background: #a5d6a7;
+  color: #fff;
 }

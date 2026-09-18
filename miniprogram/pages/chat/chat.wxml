@@ -1,6 +1,6 @@
 <!--pages/chat/chat.wxml-->
 <view class="chat-page">
-  <view class="chat-header">AI问答</view>
+  <view class="chat-header">基于知识库的本地大模型问答</view>
 
   <scroll-view class="chat-list" scroll-y="true" scroll-with-animation="true" scroll-into-view="{{scrollIntoView}}">
     <view wx:for="{{messages}}" wx:key="id" class="msg-row {{item.role === 'user' ? 'user' : 'ai'}}">
