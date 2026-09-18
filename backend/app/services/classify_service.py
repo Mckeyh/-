@@ -146,6 +146,20 @@ def load_resnet50_from_local_safetensors():
          default_logger.info(f"没有旧FC权重")
     return model
 
+# 自定义随机采样器：每个 epoch 用 numpy 重新打乱索引（等价于 shuffle 的效果）。
+# 存在的意义：config.py 里设置了 torch.set_default_device('cuda')，
+# torch 自带的 RandomSampler 会用 torch.randperm 生成索引张量 —— 在默认设备为 cuda 时
+# 该张量建在显存上，随后 .numpy() 会抛
+# "TypeError: can't convert cuda:0 device type tensor to numpy"。
+# 用 numpy 在 CPU 端打乱即可完全规避，且不影响 shuffle 的随机性。
+class NumpyRandomSampler(torch.utils.data.Sampler):
+     def __init__(self,data_source):
+          self.n=len(data_source)
+     def __iter__(self):
+          return iter(np.random.permutation(self.n).tolist())
+     def __len__(self):
+          return self.n
+
 # 构建微调用的优化器（三种模式）：
 #   unfreeze=False        —— 冻结主干，只训练最后的余弦分类头（快、省显存，小程序端小样本增量训练用）
 #   unfreeze=True/'layer4'—— 解冻最后一个残差阶段 layer4 + 分类头
@@ -345,11 +359,30 @@ class ClassifyService:
                train_labels=[full_dataest.targets[i] for i in train_indices]
                class_counts=np.bincount(train_labels,minlength=num_classes)
                class_counts=np.maximum(class_counts,1)
-               class_weight=1.0/torch.tensor(class_counts,dtype=float)
-               sample_weight=class_weight[train_labels]
-               sample=WeightedRandomSampler(sample_weight,len(sample_weight),replacement=True)
                batch_size=settings.BATCH_SIZE
-               train_loader=torch.utils.data.DataLoader(train_dataset,batch_size=batch_size,sampler=sample,shuffle=False,num_workers=0)
+               # 采样策略按「类别不均衡度」自动选择（不均衡度 = 最多类 / 最少类）：
+               #   不均衡度 < 4  → 用 WeightedRandomSampler 加权（把少样本类提上来）
+               #   不均衡度 >= 4 → 用自然分布（shuffle）
+               # 原因：IP102 全量数据里蚜虫 2456 张、cerodonta 只有 82 张（30 倍）。
+               # 加权采样会把训练分布拉成「均匀」，而验证集/官方 val 都是「自然分布」，
+               # 分布错配会直接掉点（实测 val 从 38% 掉到 22~29%）。
+               imbalance=float(class_counts.max())/float(class_counts.min())
+               if imbalance>=4.0:
+                    default_logger.info(f"类别不均衡度 {imbalance:.1f} 倍，按自然分布采样(shuffle)")
+                    # 注意：num_workers 必须为 0（沙箱禁止创建命名管道，起子进程会 PermissionError）；
+                    # pin_memory 也不能开：config.py 设了 torch.set_default_device('cuda')，
+                    # 数据集产出的已是 CUDA 张量，pin 会报 "cannot pin 'torch.cuda.LongTensor'"。
+                    # 用自写的 numpy 随机采样器，不用 torch 自带 RandomSampler：
+                    # config.py 设了 torch.set_default_device('cuda')，RandomSampler 内部的
+                    # torch.randperm 会把索引张量建在显存上，随后 .numpy() 直接报
+                    # "can't convert cuda:0 device type tensor to numpy"。
+                    train_loader=torch.utils.data.DataLoader(train_dataset,batch_size=batch_size,sampler=NumpyRandomSampler(train_dataset),shuffle=False,num_workers=0)
+               else:
+                    class_weight=1.0/torch.tensor(class_counts,dtype=float)
+                    sample_weight=class_weight[train_labels]
+                    sample=WeightedRandomSampler(sample_weight,len(sample_weight),replacement=True)
+                    default_logger.info(f"类别不均衡度 {imbalance:.1f} 倍，用加权采样平衡类别")
+                    train_loader=torch.utils.data.DataLoader(train_dataset,batch_size=batch_size,sampler=sample,shuffle=False,num_workers=0)
                val_loader=torch.utils.data.DataLoader(val_dataset,batch_size=batch_size,shuffle=False,num_workers=0)
           except Exception as e:
                default_logger.error(f"数据加载失败:{e}")
@@ -396,6 +429,8 @@ class ClassifyService:
           lr_fc=5e-4
           optimizer=build_finetune_optimizer(model,lr_fc,unfreeze)
           scheduler=optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=epoch,eta_min=1e-6)
+          # 输入尺寸固定为 224，开启 cudnn benchmark 让卷积算法自动选最优实现（提速约 5~10%）
+          torch.backends.cudnn.benchmark=True
           # 混合精度 AMP：速度约快一倍，但本机实测 fp16 下梯度频繁溢出
           # （GradScaler 的 scale 从 65536 跌到 128、大量 step 被跳过），会让训练发散；
           # 因此默认改为关闭（use_amp=False），需要时可显式传 use_amp=True 打开。
@@ -501,7 +536,14 @@ class ClassifyService:
                input_tensor=self.transform(image).unsqueeze(0).to(self.device)
                with torch.no_grad():
                     outputs=self.model(input_tensor)
-                    probs=torch.softmax(outputs,dim=1).cpu().numpy()[0]
+                    probs=torch.softmax(outputs,dim=1)
+                    # TTA（测试时增强）：把图片水平翻转再前向一次，两次概率取平均。
+                    # 害虫照片左右翻转不改变类别语义，几乎零成本换一点准确率；
+                    # 推理耗时约翻倍（本机 0.6s → 约 1.1s），开关见 config.TTA_ENABLED。
+                    if getattr(settings,"TTA_ENABLED",False):
+                         flip_tensor=torch.flip(input_tensor,dims=[3])
+                         probs=(probs+torch.softmax(self.model(flip_tensor),dim=1))/2.0
+                    probs=probs.cpu().numpy()[0]
                top_indices=np.argsort(probs)[-top_k:][::-1]
                top_probs=probs[top_indices]
                top5=[]

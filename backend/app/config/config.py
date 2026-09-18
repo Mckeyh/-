@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # 识别置信度阈值：32 类以上细粒度模型 softmax 很平缓（预测正确时 top-1 往往也只有 0.05~0.12），
     # 若沿用 0.25 会让几乎所有图片都返回「未知类型」。这里取 0.05，主要由返回的 Top-5 候选表达不确定性。
     CONFIDENCE_THRESHOLD: float = 0.05
+    # 测试时增强（TTA）：把图片水平翻转再前向一次，两次概率取平均。
+    # 实测收益在噪声级别（内部留出集 Top-1 −0.22 / Top-5 +0.75，官方 val Top-1 +0.43 / Top-5 −0.27），
+    # 却让推理耗时翻倍，因此默认关闭；需要时可改 True 再比较。
+    TTA_ENABLED: bool = False
     FULL_EPOCHS: int = 10
     TRAIN_STATUS_RUNNING:str = "running"
     TRAIN_STATUS_IDLE:str="idle"
