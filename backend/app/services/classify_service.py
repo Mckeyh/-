@@ -146,17 +146,39 @@ def load_resnet50_from_local_safetensors():
          default_logger.info(f"没有旧FC权重")
     return model
 
-# 构建微调用的优化器：
-#   unfreeze=False —— 冻结主干，只训练最后的余弦分类头（快、显存小，适合小样本增量训练）
-#   unfreeze=True  —— 额外解冻最后一个残差阶段 layer4，让高层特征也参与微调。
-#                     冻结主干时常常欠拟合（train_acc 和 val_acc 都卡在低位上不去），
-#                     解冻 layer4 能明显提升准确率；主干学习率取分类头的 1/10，
-#                     避免把 ImageNet 预训练特征冲掉（灾难性遗忘）。
+# 构建微调用的优化器（三种模式）：
+#   unfreeze=False        —— 冻结主干，只训练最后的余弦分类头（快、省显存，小程序端小样本增量训练用）
+#   unfreeze=True/'layer4'—— 解冻最后一个残差阶段 layer4 + 分类头
+#   unfreeze='all'/'full' —— 解冻**整个主干** + 分类头（准确率最高，也最慢、最吃显存）
+# 主干学习率取分类头的 1/5（1e-4），既不冲掉 ImageNet 预训练特征（灾难性遗忘），
+# 又能让主干真正适配害虫细粒度特征；分类头单独用大学习率快速收敛。
 def build_finetune_optimizer(model,lr_fc=5e-4,unfreeze=False):
      for p in model.parameters():
           p.requires_grad_(False)
      for p in model.fc.parameters():
           p.requires_grad_(True)
+     if unfreeze in ('all','full'):
+          # 主干参数分两组返回：
+          #   decay    —— 卷积/全连接权重，加 weight_decay 抑制过拟合
+          #   no_decay —— BN 的 weight/bias 以及所有 bias。对它们做 weight decay 会破坏
+          #               预训练统计量，是「解冻主干后越训越差」的常见原因。
+          bn_ids={id(p) for m in model.modules()
+                  if isinstance(m,nn.modules.batchnorm._BatchNorm) for p in m.parameters()}
+          decay,no_decay=[],[]
+          for n,p in model.named_parameters():
+               if n.startswith('fc.'):
+                    continue
+               p.requires_grad_(True)
+               if id(p) in bn_ids or p.ndim<=1:
+                    no_decay.append(p)
+               else:
+                    decay.append(p)
+          default_logger.info("已解冻整个主干 + 分类头，主干学习率 %g（BN/bias 不加 weight decay）" % (lr_fc/10))
+          return optim.Adam([
+               {'params':decay,'lr':lr_fc/10,'weight_decay':0.01},
+               {'params':no_decay,'lr':lr_fc/10,'weight_decay':0.0},
+               {'params':model.fc.parameters(),'lr':lr_fc,'weight_decay':0.01}
+          ])
      if unfreeze:
           for p in model.layer4.parameters():
                p.requires_grad_(True)
@@ -276,7 +298,7 @@ class ClassifyService:
           return model
      # 微调训练主流程：准备数据 → 构建模型 → 逐 epoch 训练与验证 → 保存最优模型
      # unfreeze=True 时额外解冻 layer4 一起微调（小分类头欠拟合时用，主干用小学习率）
-     def fintune(self,date_dir:Path,epoch=settings.FULL_EPOCHS,stop_check=None,unfreeze=False):
+     def fintune(self,date_dir:Path,epoch=settings.FULL_EPOCHS,stop_check=None,unfreeze=False,use_amp=None):
           default_logger.info(f"开始微调")
           try:
                train_transform=transforms.Compose([
@@ -374,6 +396,12 @@ class ClassifyService:
           lr_fc=5e-4
           optimizer=build_finetune_optimizer(model,lr_fc,unfreeze)
           scheduler=optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=epoch,eta_min=1e-6)
+          # 混合精度 AMP：速度约快一倍，但本机实测 fp16 下梯度频繁溢出
+          # （GradScaler 的 scale 从 65536 跌到 128、大量 step 被跳过），会让训练发散；
+          # 因此默认改为关闭（use_amp=False），需要时可显式传 use_amp=True 打开。
+          use_amp=False if use_amp is None else bool(use_amp)
+          scaler=torch.cuda.amp.GradScaler(enabled=True) if use_amp else None
+          default_logger.info(f"混合精度AMP:{use_amp}")
           best_acc=0.0
           best_model_state=None
           for e in range(1,epoch+1):
@@ -381,16 +409,30 @@ class ClassifyService:
                     default_logger.info(f"微调模型结束")
                     return False
                model.train()
+               # 冻结 BN 的滑动统计量（保留预训练统计量、也不更新）：
+               # 小 batch（16）+ 强增广（RandomResizedCrop/ColorJitter）下若让 BN 继续更新
+               # running_mean/var，特征分布会被带偏，验证准确率反而低于「只训分类头」。
+               for m in model.modules():
+                    if isinstance(m,nn.modules.batchnorm._BatchNorm):
+                         m.eval()
                running_loss,correct,total=0.0,0,0
                for images,labels in train_loader:
-                    images=images.to(self.device)
-                    labels=labels.to(self.device)
-                    optimizer.zero_grad()
-                    outputs=model(images)
-                    loss=criterion(outputs,labels)
-                    loss.backward()
-                    clip_grad_norm_([p for p in model.parameters() if p.requires_grad],1.0)
-                    optimizer.step()
+                    images=images.to(self.device,non_blocking=True)
+                    labels=labels.to(self.device,non_blocking=True)
+                    optimizer.zero_grad(set_to_none=True)
+                    with torch.autocast(device_type='cuda',dtype=torch.float16,enabled=use_amp):
+                         outputs=model(images)
+                         loss=criterion(outputs,labels)
+                    if scaler is not None:
+                         scaler.scale(loss).backward()
+                         scaler.unscale_(optimizer)
+                         clip_grad_norm_([p for p in model.parameters() if p.requires_grad],1.0)
+                         scaler.step(optimizer)
+                         scaler.update()
+                    else:
+                         loss.backward()
+                         clip_grad_norm_([p for p in model.parameters() if p.requires_grad],1.0)
+                         optimizer.step()
                     running_loss+=loss.item()*images.size(0)
                     _,pred=torch.max(outputs,1)
                     total+=labels.size(0)
@@ -401,18 +443,18 @@ class ClassifyService:
                val_loss,val_correct,val_total=0.0,0,0
                with torch.no_grad():
                     for images,labels in val_loader:
-                         images=images.to(self.device)
-                         labels=labels.to(self.device)
-                         optimizer.zero_grad()
-                         outputs=model(images)
-                         loss=criterion(outputs,labels)
+                         images=images.to(self.device,non_blocking=True)
+                         labels=labels.to(self.device,non_blocking=True)
+                         with torch.autocast(device_type='cuda',dtype=torch.float16,enabled=use_amp):
+                              outputs=model(images)
+                              loss=criterion(outputs,labels)
                          val_loss+=loss.item()*images.size(0)
                          _,pred=torch.max(outputs,1)
                          val_total+=labels.size(0)
                          val_correct+=(pred==labels).sum().item()
                val_loss /=val_total
                val_acc =val_correct / val_total
-               default_logger.info(f"Epoch {e}/{epoch} done, train_acc:{train_acc:.4f}, val_acc:{val_acc:.4f}")
+               default_logger.info(f"Epoch {e}/{epoch} done, train_acc:{train_acc:.4f}, val_acc:{val_acc:.4f}, amp_scale:{scaler.get_scale() if scaler is not None else '-'}")
                scheduler.step()
                current_lr=optimizer.param_groups[0]['lr']
                if val_acc > best_acc:

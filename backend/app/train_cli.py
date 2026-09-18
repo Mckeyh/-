@@ -57,8 +57,16 @@ def main() -> int:
     parser.add_argument('--dry-run', action='store_true',
                         help='只统计并打印数据集概况，不真正训练')
     parser.add_argument('--unfreeze', action='store_true',
-                        help='同时解冻 layer4 微调（准确率更高，耗时更长）')
+                        help='解冻 layer4 一起微调（准确率更高，耗时更长）')
+    parser.add_argument('--unfreeze-all', action='store_true',
+                        help='解冻整个主干微调（准确率最高、最慢）')
+    parser.add_argument('--amp', action='store_true',
+                        help='启用 fp16 混合精度（更快；本机实测 fp16 会发散，默认关闭）')
     args = parser.parse_args()
+
+    # 训练模式：--unfreeze-all → 解冻整个主干（准确率最高）；
+    #           --unfreeze     → 只解冻 layer4；都不加 → 只训分类头（默认）
+    unfreeze = 'all' if args.unfreeze_all else bool(args.unfreeze)
 
     data_dir = Path(args.data)
     stats = scan_dataset(data_dir)
@@ -85,9 +93,9 @@ def main() -> int:
         print('dry-run 模式：仅统计，不训练')
         return 0
 
-    print('开始微调，共 %d 个 epoch …' % args.epochs)
+    print('开始微调，共 %d 个 epoch …（unfreeze=%s）' % (args.epochs, unfreeze))
     svc = ClassifyService()                    # 单例：内部会先加载模型
-    ok = svc.fintune(date_dir=data_dir, epoch=args.epochs, unfreeze=args.unfreeze)
+    ok = svc.fintune(date_dir=data_dir, epoch=args.epochs, unfreeze=unfreeze, use_amp=args.amp)
     print('训练结果：%s' % ('成功（模型已保存）' if ok else '失败（详见日志）'))
     return 0 if ok else 1
 

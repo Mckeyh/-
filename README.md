@@ -94,10 +94,28 @@ backend/data/upload/dataset/unzipped/
 > （00002.jpg → 01115.jpg → 01604.jpg …），说明 label 按原始打包顺序排列、从 0 开始，
 > 而不是 ImageFolder 那种「目录名字符串排序」。
 
-**实测结果（本机 RTX 8GB）**：36 类 / 6685 张，训练集 5348、验证集 1337（随机种子 42）。
-`--epochs 10` 只训分类头：Top-1 **32.8%** / Top-5 **65.5%**；
-`--epochs 6 --unfreeze`（解冻 layer4）：Top-1 32.9%（基本持平——瓶颈在数据：三种地老虎、三种飞虱、
-多种蚜虫等近缘种仅凭一张照片极难区分，每类样本也只有 200 张；后续可用全 102 类 + 更大主干继续提升）。
+**实测结果（本机 RTX 8GB，36 类 / 6685 张，训练集 5348、验证集 1337，随机种子 42）**：
+
+| 训练配置 | Top-1 | Top-5 |
+|---|---|---|
+| `--epochs 10`（只训分类头，主干冻结） | 32.76% | 65.45% |
+| `--epochs 6 --unfreeze`（解冻 layer4） | 32.9% | — |
+| **`--epochs 8 --unfreeze-all`（全主干微调，fp32）** | **38.07%** | **73.15%** |
+
+全主干微调（8 epoch）把 Top-1 从 32.8% 提到 **38.1%**、Top-5 提到 **73.2%**；
+第 8 轮 train_acc(38.7%) 仍在缓慢上升，说明还没训透，加 epoch / 加数据还能再涨
+（瓶颈是近缘种：三种地老虎、三种飞虱、多种蚜虫仅凭一张照片极难区分，且每类只有 200 张）。
+
+**微调踩过的坑（很值得写进答辩：调参不是玄学，是定位问题）**：
+
+1. **fp16 AMP 在本机不可用**：GradScaler 的 scale 从默认 65536 一路跌到 128，
+   说明梯度频繁溢出、大量 step 被跳过 —— 表现为 train_acc 长期卡在 25% 甚至从 34% 一路崩到 12%（发散）。
+   因此 `fintune(use_amp=...)` 默认关闭（`--amp` 可显式开启）。
+2. **BN 必须冻结统计量**：小 batch(16) + 强增广下让 BatchNorm 继续更新 `running_mean/var`，
+   会把预训练特征分布带偏；`fintune` 里每轮 `model.train()` 后把 BN 模块单独切回 `eval()`。
+3. **BN 的 weight/bias 不能加 weight decay**：优化器按「需正则化 / 不需正则化」分两组
+   （后者含 BN 参数与所有 bias），这是解冻主干后准确率反而下降的常见原因。
+4. 主干学习率取分类头的 1/10（5e-5），既让主干适配害虫细粒度特征，又不冲掉 ImageNet 预训练表示。
 
 IP102 类别分布极不均衡（部分类别不足百张，最大类别上千张），
 这也是可以展开讲的技术点：本项目在采样时按上限截断，训练时用 `WeightedRandomSampler` 做类别加权。
@@ -107,8 +125,10 @@ IP102 类别分布极不均衡（部分类别不足百张，最大类别上千�
 ```bash
 cd backend/app
 uv run python train_cli.py --dry-run          # 先统计数据集（不训练）
-uv run python train_cli.py --epochs 10        # 命令行训练（推荐用于 IP102）
-uv run python train_cli.py --epochs 6 --unfreeze   # 解冻 layer4 一起微调（准确率上限更高、更慢）
+uv run python train_cli.py --epochs 10        # 只训分类头（快，适合小样本增量）
+uv run python train_cli.py --epochs 6 --unfreeze       # 解冻 layer4 一起微调
+uv run python train_cli.py --epochs 8 --unfreeze-all   # 全主干微调（当前最佳：Top-1 38.1%/Top-5 73.2%）
+uv run python train_cli.py --epochs 8 --unfreeze-all --amp   # 加 fp16 混合精度（本机实测会发散，慎用）
 ```
 或在小程序「训练」页上传样本（只适合每类几十张的小样本演示）。
 
